@@ -1,136 +1,150 @@
 from random import sample
 
 
+class Cell:
+    def __init__(self):
+        self.is_opened = False
+        self.is_bomb = False
+        self.nearby_bombs = 0
 
-class SapperGame:
-    def __init__(self, field_size=(3, 3), bombs_number=4, initial_coordinates=None):
-        self.initial_coordinates = initial_coordinates
-        self.field_size = field_size
-        self.bombs_number = bombs_number
-        if self.field_size[0] * self.field_size[1] <= self.bombs_number:
-            raise  ValueError('Мин больше, чем слотов')
-        self.opened_sections = {}
-        self.field_coordinates = self.generate_field_coordinates()
-        self.steps_counter = 0
-        self.unopened_sections = self.generate_unopened_sections()
-
-
-    def generate_field_coordinates(self):
-        field_coordinates = []
-        for i in range(self.field_size[0]):
-            for j in range(self.field_size[1]):
-                field_coordinates.append((i, j))
-        if self.initial_coordinates:
-            field_coordinates.remove(self.initial_coordinates)
-            return field_coordinates
-        return field_coordinates
-
-
-    def generate_unopened_sections(self):
-        unopened_sections = {}
-        bombs = sample(self.field_coordinates, self.bombs_number)
-        for coordinate in self.field_coordinates:
-            if coordinate in bombs:
-                unopened_sections[coordinate] = True
-            else:
-                unopened_sections[coordinate] = False
-        return unopened_sections
-
-
-    def handle_right_step(self, coordinates, exclusion=None):
-        if not exclusion:
-            exclusion = (coordinates,)
-        neighbours = []
-        is_recursion = True
-        for x in range(-1, 2):
-            for y in range(-1, 2):
-               n_x = coordinates[0] + x
-               n_y = coordinates[1] + y
-               if ((n_x, n_y) not in self.opened_sections
-                       and 0 <= n_x < self.field_size[0]
-                       and 0 <= n_y < self.field_size[1]
-                       and (n_x, n_y) not in exclusion):
-                    neighbour = (n_x, n_y)
-                    neighbours.append(neighbour)
-                    if self.unopened_sections.get(neighbour):
-                        is_recursion = False
-        if is_recursion and neighbours:
-            self.opened_sections[coordinates] = ' '
-            for neighbour in neighbours:
-                if neighbour not in self.opened_sections:
-                    self.handle_right_step(neighbour, (coordinates, neighbour))
+    def draw(self):
+        if self.is_opened:
+            return ' ' if self.nearby_bombs == 0 else str(self.nearby_bombs)
         else:
-            bomb_counter  = 0
-            for neighbour in neighbours:
-                if self.unopened_sections[neighbour]:
-                    bomb_counter += 1
-            self.opened_sections[coordinates] = bomb_counter
-            if self.initial_coordinates and self.initial_coordinates != coordinates:
-                self.unopened_sections.pop(coordinates)
+            return '*'
 
 
-    def is_good_step(self, coordinates):
-        if self.unopened_sections[coordinates]:
+class GameField:
+    def __init__(self, rows, columns, bombs_number):
+        self.rows = rows
+        self.columns = columns
+        self.bombs_number = bombs_number
+        self.field = [[Cell() for _ in range(self.columns)]
+                      for _ in range(self.rows)]
+        self.is_bombed = False
+
+    def is_cell_in_field(self, x, y):
+        return 0 <= y < self.columns and 0 <= x < self.rows
+
+    def find_neighbors(self, x, y):
+        neighbors = []
+        for i in range(-1, 2):
+            for j in range(-1, 2):
+                n_x, n_y = x + i, y + j
+                if (i != 0 or j != 0) and self.is_cell_in_field(n_x, n_y):
+                    neighbors.append((n_x, n_y))
+        return neighbors
+
+    def plant_bombs(self, initial_x, initial_y):
+        initial_coordinates = (initial_x, initial_y)
+        available_coordinates = ([(row, column)
+                                  for row in range(self.rows)
+                                  for column in range(self.columns)])
+        available_coordinates.remove(initial_coordinates)
+        bombs = sample(available_coordinates, self.bombs_number)
+        for row, column in bombs:
+            self.field[row][column].is_bomb = True
+
+        self.is_bombed = True
+
+    def count_nearby_mines(self):
+        for row in range(self.rows):
+            for column in range(self.columns):
+                if not self.field[row][column].is_bomb:
+                    counter = 0
+                    for x, y in self.find_neighbors(row, column):
+                        if self.field[x][y].is_bomb:
+                            counter += 1
+                    self.field[row][column].nearby_bombs = counter
+
+    def handle_step(self, x, y):
+        if not self.is_cell_in_field(x, y):
+            print('Wrong coordinates')
+            return True
+        if not self.is_bombed:
+            self.plant_bombs(x, y)
+            self.count_nearby_mines()
+        cell = self.field[x][y]
+        if cell.is_opened:
+            print('Cell is already opened')
+            return True
+        cell.is_opened = True
+        if cell.is_bomb == True:
+            print('Lose')
             return False
+        if cell.nearby_bombs == 0:
+            for n_x, n_y in self.find_neighbors(x, y):
+                neighbor = self.field[n_x][n_y]
+                if not neighbor.is_opened:
+                    self.handle_step(n_x, n_y)
         return True
 
-
-    def is_over(self):
-        if (len(self.opened_sections) ==
-                self.field_size[0] * self.field_size[1] - self.bombs_number):
-            return True
-        return False
-
-
     def draw_field(self):
-        first_row = ''.join(str(i) for i in range(0, self.field_size[0]))
-        print('  ' + first_row)
-        print("".join("_" for i in range(self.field_size[0] + 2)))
-        for y in range(self.field_size[1]):
-            row = ''
-            for x in range(self.field_size[0]):
-                if (x, y) in self.opened_sections:
-                    row += str(self.opened_sections[(x, y)])
-                else:
-                    row += '*'
-            print(str(y) + '|' + row)
+        print("  " + " ".join(f"{i}" for i in range(self.rows)))
+        for row in range(self.columns):
+            row_to_display =[]
+            for col in range(self.rows):
+                row_to_display.append(self.field[col][row].draw())
+            print(f"{row} " + " ".join(row_to_display))
+
+    def is_win(self):
+        opened_cells = sum(
+            1
+            for row in range(self.rows)
+            for column in range(self.columns)
+            if self.field[row][column].is_opened
+        )
+        return opened_cells == self.rows * self.columns - self.bombs_number
 
 
-while True:
-    x_size, y_size = input('Введите размеры поля в формате X Y')
-    field_size = (int(x_size), int(y_size))
-    bombs_number = int(input('Enter bombs number'))
-    start = SapperGame(field_size, bombs_number)
-    start.draw_field()
-    x, y = input('Enter coordinates: \n')
-    initial_coordinates = (int(x), int(y))
-    main_game = SapperGame(field_size, bombs_number, initial_coordinates)
-    main_game.handle_right_step(initial_coordinates)
-    main_game.draw_field()
-    while True:
+class ConsoleInterface:
+    def __init__(self):
+        print("Game started")
+
+    def start_game(self):
         try:
-            x, y = input('Enter coordinates: \n')
-            coordinates = (int(x), int(y))
-            if main_game.is_good_step(coordinates):
-                main_game.handle_right_step(coordinates)
-                if main_game.is_over():
-                    print('Win')
+            rows = int(input("Enter number of rows: \n "))
+            cols = int(input("Enter number of columns: \n "))
+            mines = int(input("Enter number of mines: \n "))
+            if mines >= rows * cols:
+                print("Too much mines")
+                return
+            game_field = GameField(cols, rows, mines)
+            while True:
+                command = (input("Enter command: open X Y or show or exit: \n")
+                           .strip().lower())
+                if command == 'exit':
                     break
-                main_game.draw_field()
-            else:
-                print('Lose')
-                break
-        except:
-            x, y = input('Enter correct coordinates: \n')
-            coordinates = (int(x), int(y))
-            if main_game.is_good_step(coordinates):
-                main_game.handle_right_step(coordinates)
-                if main_game.is_over():
-                    print('Win')
-                main_game.draw_field()
-            else:
-                print('Lose')
-                break
+                elif command == 'show':
+                    game_field.draw_field()
+                elif command.startswith('open'):
+                    command_words = command.split()
+                    if len(command_words) != 3:
+                        print("Wrong command")
+                        continue
+                    try:
+                        x = int(command_words[1])
+                        y = int(command_words[2])
+                    except ValueError:
+                        print("Wrong coordinates")
+                        continue
+                    step_status = game_field.handle_step(x, y)
+                    game_field.draw_field()
+                    if not step_status:
+                        break
+                    elif game_field.is_win():
+                        print("Win")
+                        break
+                else:
+                    print("Wrong command")
+        except ValueError:
+            print("Wrong command")
+
+
+if __name__ == "__main__":
+    interface = ConsoleInterface()
+    interface.start_game()
+
 
 
 
